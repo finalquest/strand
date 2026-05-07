@@ -1,0 +1,6 @@
+{
+  "name": "valid-skill",
+  "description": "A valid skill for testing",
+  "version": "1.0.0",
+  "entrypoint": "skill.md"
+}

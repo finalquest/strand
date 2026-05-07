@@ -1,0 +1,6 @@
+{
+  "name": "missing-entrypoint",
+  "description": "A skill with missing entrypoint",
+  "version": "1.0.0",
+  "entrypoint": "nonexistent.md"
+}

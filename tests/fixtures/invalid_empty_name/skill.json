@@ -1,0 +1,6 @@
+{
+  "name": "",
+  "description": "A skill with empty name",
+  "version": "1.0.0",
+  "entrypoint": "skill.md"
+}

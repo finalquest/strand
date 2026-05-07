@@ -1,0 +1,13 @@
+FROM rust:bookworm AS builder
+
+WORKDIR /app
+
+# Cache dependencies
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs
+RUN cargo build --release
+RUN rm -rf src
+
+# Build the actual project
+COPY src ./src
+RUN cargo build --release

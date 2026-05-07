@@ -1,0 +1,6 @@
+{
+  "name": "valid-with-assets",
+  "description": "A valid skill with assets",
+  "version": "1.0.0",
+  "entrypoint": "skill.md"
+}

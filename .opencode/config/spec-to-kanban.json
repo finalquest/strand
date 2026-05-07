@@ -1,0 +1,35 @@
+{
+  "planka": {
+    "base_url": "https://tasks.finalq.xyz",
+    "board_id": "1768334339835168102",
+    "lists": {
+      "definitions": "1768651136513869174",
+      "blocked": "1768651136807470455",
+      "backlog": "1768651136975242616",
+      "ready": "1768651137159791993",
+      "doing": "1768651137335952762",
+      "review": "1768651137713440123",
+      "done": "1768651138048984444",
+      "wontDo": "1768651138292254077"
+    },
+    "labels": {
+      "definition": "berry-red",
+      "foundation": "pumpkin-orange",
+      "feature": "lagoon-blue",
+      "bug": "pink-tulip",
+      "spike": "light-mud",
+      "validation": "piggy-red",
+      "docs": "egg-yellow",
+      "cli": "antique-blue",
+      "storage": "dark-granite",
+      "evaluator": "deep-ocean",
+      "observability": "turquoise-sea",
+      "mvp": "sunny-grass",
+      "blocked": "wet-rock",
+      "needs-decision": "pirate-gold",
+      "high": "berry-red",
+      "medium": "pumpkin-orange",
+      "low": "lagoon-blue"
+    }
+  }
+}
