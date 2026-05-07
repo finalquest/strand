@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "targets": {
+    "opencode": true
+  },
+  "skillsRepo": {
+    "provider": "gitlab",
+    "project": ""
+  },
+  "skills": []
+}
