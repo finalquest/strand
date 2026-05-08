@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use anyhow::Result;
 use dialoguer::Confirm;
 
-use crate::config::{Config, TargetConfig, SkillsRepoConfig, CONFIG_PATH};
+use crate::config::{Config, TargetConfig, SkillsRepoConfig, AgentsRepoConfig, CONFIG_PATH};
 use crate::auth::glab::GlabAuth;
 
 fn prompt_input(prompt: &str) -> Result<String> {
@@ -66,6 +66,7 @@ pub fn init() -> Result<()> {
     // Create directories
     fs::create_dir_all(".strand")?;
     fs::create_dir_all(".agents/skills")?;
+    fs::create_dir_all(".agents/agents")?;
 
     let is_interactive = io::stdin().is_terminal();
 
@@ -102,6 +103,20 @@ pub fn init() -> Result<()> {
         std::env::var("strand_INIT_BRANCH").unwrap_or_else(|_| "main".to_string())
     };
 
+    // Prompt for agents repository configuration (or env overrides)
+    let agents_project = if is_interactive {
+        prompt_input("GitLab project path for agents repository (optional, e.g., namespace/project): ")?
+    } else {
+        std::env::var("strand_INIT_AGENTS_PROJECT").unwrap_or_default()
+    };
+
+    let agents_branch = if is_interactive && !agents_project.is_empty() {
+        let input = prompt_input("Branch or tag to use for agents [main]: ")?;
+        if input.is_empty() { "main".to_string() } else { input }
+    } else {
+        std::env::var("strand_INIT_AGENTS_BRANCH").unwrap_or_else(|_| "main".to_string())
+    };
+
     // Load existing config or create new one
     let mut config = if std::path::Path::new(CONFIG_PATH).exists() {
         let config_str = fs::read_to_string(CONFIG_PATH)?;
@@ -110,6 +125,7 @@ pub fn init() -> Result<()> {
             targets: TargetConfig::default(),
             skills_repo: SkillsRepoConfig::default(),
             skills: Vec::new(),
+            ..Default::default()
         })
     } else {
         Config {
@@ -117,6 +133,7 @@ pub fn init() -> Result<()> {
             targets: TargetConfig::default(),
             skills_repo: SkillsRepoConfig::default(),
             skills: Vec::new(),
+            ..Default::default()
         }
     };
 
@@ -126,11 +143,34 @@ pub fn init() -> Result<()> {
     config.skills_repo.provider = "gitlab".to_string();
     config.skills_repo.project = project;
     config.skills_repo.branch = branch;
-    config.skills_repo.base_url = base_url;
+    config.skills_repo.base_url = base_url.clone();
     // skills are preserved from existing config
+
+    // Update agents repo only when user provides a project path
+    if !agents_project.is_empty() {
+        config.agents_repo.provider = "gitlab".to_string();
+        config.agents_repo.project = agents_project;
+        config.agents_repo.branch = agents_branch;
+        config.agents_repo.base_url = base_url;
+    } else {
+        config.agents_repo = AgentsRepoConfig::default();
+    }
 
     let config_json = serde_json::to_string_pretty(&config)?;
     fs::write(CONFIG_PATH, config_json)?;
+
+    // Create target directories for agents
+    if config.targets.opencode {
+        fs::create_dir_all(".opencode/agents")?;
+    }
+    if config.targets.codex {
+        fs::create_dir_all(".codex/agents")?;
+    }
+
+    // Recreate symlinks for any existing agents
+    for agent in &config.agents {
+        crate::commands::agents::helpers::create_agent_symlinks(&agent.name, &config.targets)?;
+    }
 
     Ok(())
 }

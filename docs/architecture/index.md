@@ -8,13 +8,14 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLI Layer                             │
 │  main.rs → cli.rs → commands::{init,ls,ls_remote,sync,...}   │
+│                    → commands::agents::{ls,ls_remote,validate} │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     Business Logic                           │
 │  config.rs · download.rs · fix.rs · report.rs · version.rs  │
-│  interactive/ · gitignore.rs · codex.rs                     │
+│  interactive/ · gitignore.rs · codex.rs · symlinks.rs · env.rs │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -45,6 +46,9 @@
 | `sync` | `src/commands/sync.rs` | `execute()` | Checks for updates, optionally upgrades |
 | `install` | `src/commands/install.rs` | `execute(opts)` | Reinstalls skills pinned in config |
 | `validate` | `src/commands/validate.rs` | `execute()` | Validates local `skills/` directory |
+| `agents ls` | `src/commands/agents/ls.rs` | `execute()` | Lists installed agents with version comparison |
+| `agents ls-remote` | `src/commands/agents/ls_remote.rs` | `execute()` | Lists remote agents with fuzzy select |
+| `agents validate` | `src/commands/agents/validate.rs` | `execute()` | Validates local `agents/` directory |
 
 ## Project Conventions
 
@@ -66,6 +70,9 @@
 | Change validation/reporting | `src/commands/validate.rs` (flow) → `src/fix.rs` (auto-fix) → `src/report.rs` (output) |
 | Add a new transport backend | `src/gitlab/transport.rs` (implement `Transport` trait) → `src/gitlab/client.rs` (wire in factory) |
 | Change skill model | `src/models/skill.rs` (struct) → `src/config.rs` (persistence) → commands (usage) |
+| Change agent model | `src/models/agent.rs` (struct) → `src/config.rs` (persistence) → commands::agents (usage) |
+| Change symlink logic | `src/symlinks.rs` (generic) → `src/codex.rs` (skills) / `src/commands/agents/helpers.rs` (agents) |
+| Change env vars | `src/env.rs` (definitions) → `src/config.rs` (resolution) |
 
 ## Module Catalog
 

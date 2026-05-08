@@ -27,4 +27,19 @@ pub enum Commands {
     },
     /// Validate skill structure and metadata
     Validate,
+    /// Manage agents
+    Agents {
+        #[command(subcommand)]
+        command: AgentsCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentsCommands {
+    /// List installed agents with local vs remote version comparison
+    Ls,
+    /// List available agents from remote repository
+    LsRemote,
+    /// Validate agent structure and metadata
+    Validate,
 }

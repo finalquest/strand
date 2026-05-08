@@ -29,7 +29,8 @@
       "needs-decision": "pirate-gold",
       "high": "berry-red",
       "medium": "pumpkin-orange",
-      "low": "lagoon-blue"
+      "low": "lagoon-blue",
+      "backend": "dark-granite"
     }
   }
 }

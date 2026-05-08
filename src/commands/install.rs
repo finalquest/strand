@@ -3,10 +3,11 @@ use std::fs;
 use std::path::Path;
 
 use crate::codex;
-use crate::config::{Config, CONFIG_PATH, SkillEntry};
+use crate::config::{AgentEntry, Config, CONFIG_PATH, SkillEntry};
 use crate::download;
 use crate::gitignore;
 use crate::gitlab::GitLabClient;
+use crate::models::agent::Agent;
 use crate::models::skill::Skill;
 
 pub struct InstallOptions {
@@ -57,14 +58,42 @@ pub fn execute(options: InstallOptions) -> Result<()> {
         }
     }
 
+    let mut agents_updated = 0;
+    let mut agents_errors = 0;
+    let mut agents_up_to_date = 0;
+
+    if !config.agents.is_empty() {
+        let (agents_project, agents_base_url, agents_branch) = config.resolve_agents_repo();
+
+        if !agents_project.is_empty() {
+            let agents_client = GitLabClient::for_project(agents_base_url, agents_project)
+                .map_err(|e| anyhow::anyhow!("Authentication failed for agents repo: {}", e))?
+                .with_branch(&agents_branch);
+
+            for agent_entry in &config.agents {
+                match install_agent(&agents_client, &config, agent_entry, &options) {
+                    Ok(true) => agents_updated += 1,
+                    Ok(false) => agents_up_to_date += 1,
+                    Err(e) => {
+                        eprintln!("Error installing agent {}: {}", agent_entry.name, e);
+                        agents_errors += 1;
+                    }
+                }
+            }
+        }
+    }
+
     if options.dry_run {
         println!("\nDry run complete.");
     } else {
         println!("\nInstall complete.");
     }
-    println!("  Up to date: {}", up_to_date);
-    println!("  Installed: {}", updated);
-    println!("  Errors: {}", errors);
+    println!("  Skills up to date: {}", up_to_date);
+    println!("  Skills installed: {}", updated);
+    println!("  Skills errors: {}", errors);
+    println!("  Agents up to date: {}", agents_up_to_date);
+    println!("  Agents installed: {}", agents_updated);
+    println!("  Agents errors: {}", agents_errors);
 
     Ok(())
 }
@@ -146,6 +175,80 @@ fn install_skill(
     Ok(true)
 }
 
+fn install_agent(
+    client: &GitLabClient,
+    config: &Config,
+    agent_entry: &AgentEntry,
+    options: &InstallOptions,
+) -> Result<bool> {
+    let installed_path = Path::new(&agent_entry.installed_path);
+    let agent_md_path = installed_path.join("AGENT.md");
+
+    let needs_update = if !installed_path.exists() || !agent_md_path.exists() {
+        true
+    } else {
+        match fs::read_to_string(&agent_md_path) {
+            Ok(content) => match crate::models::agent::parse_agent_md(&content) {
+                Ok(frontmatter) => frontmatter.metadata.version != agent_entry.version,
+                Err(_) => {
+                    println!("    {} AGENT.md is corrupted, will reinstall", agent_entry.name);
+                    true
+                }
+            },
+            Err(_) => {
+                println!("    {} AGENT.md is unreadable, will reinstall", agent_entry.name);
+                true
+            }
+        }
+    };
+
+    if !needs_update {
+        println!("  {} v{} is up to date", agent_entry.name, agent_entry.version);
+        return Ok(false);
+    }
+
+    if options.dry_run {
+        println!(
+            "  {} v{} would be reinstalled",
+            agent_entry.name, agent_entry.version
+        );
+        return Ok(true);
+    }
+
+    println!(
+        "  Reinstalling {} v{}...",
+        agent_entry.name, agent_entry.version
+    );
+
+    let remote_agent_md = format!("agents/{}/AGENT.md", agent_entry.name);
+    let content = client
+        .fetch_file(&remote_agent_md)
+        .map_err(|e| anyhow::anyhow!("Failed to fetch AGENT.md: {}", e))?;
+    let agent: Agent = crate::models::agent::parse_agent_md(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse AGENT.md: {}", e))?
+        .to_agent();
+
+    if agent.version != agent_entry.version {
+        return Err(anyhow::anyhow!(
+            "Version mismatch: config pins {} v{} but remote has v{}",
+            agent_entry.name,
+            agent_entry.version,
+            agent.version
+        ));
+    }
+
+    crate::commands::agents::helpers::download_and_install_agent(client, &agent)?;
+    crate::commands::agents::helpers::ensure_gitignore_entries_for_agent(&agent.name)?;
+    crate::commands::agents::helpers::create_agent_symlinks(&agent.name, &config.targets)?;
+
+    println!(
+        "  Successfully reinstalled {} v{}",
+        agent.name, agent.version
+    );
+
+    Ok(true)
+}
+
 fn resolve_repo_config(config: &Config) -> Result<(String, String, String)> {
     let env_base_url = std::env::var("strand_GITLAB_URL").ok();
 
@@ -204,6 +307,16 @@ mod tests {
         fs::write(skill_dir.join("SKILL.md"), skill_md).unwrap();
     }
 
+    fn create_test_agent_dir(base: &Path, name: &str, version: &str) {
+        let agent_dir = base.join(".agents/agents").join(name);
+        fs::create_dir_all(&agent_dir).unwrap();
+        let agent_md = format!(
+            "---\nname: {}\ndescription: test\nmetadata:\n  version: {}\n---\n",
+            name, version
+        );
+        fs::write(agent_dir.join("AGENT.md"), agent_md).unwrap();
+    }
+
     fn create_test_config(base: &Path, skills: Vec<(&str, &str)>) {
         let config = Config {
             version: 1,
@@ -225,6 +338,7 @@ mod tests {
                     installed_path: format!(".agents/skills/{}", name),
                 })
                 .collect(),
+            ..Default::default()
         };
         fs::write(
             base.join(".strand/config.json"),
@@ -379,6 +493,287 @@ mod tests {
 
         assert!(result2.is_ok());
         assert_eq!(result2.unwrap(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_install_agent_up_to_date() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join("strand_test_install_agent_uptodate");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        fs::create_dir_all(".strand").unwrap();
+        fs::create_dir_all(".agents/agents").unwrap();
+        create_test_agent_dir(&temp_dir, "test-agent", "1.0.0");
+
+        let agent_entry = AgentEntry {
+            name: "test-agent".to_string(),
+            version: "1.0.0".to_string(),
+            installed_path: ".agents/agents/test-agent".to_string(),
+        };
+
+        let result = install_agent(
+            &dummy_client(),
+            &Config::default(),
+            &agent_entry,
+            &InstallOptions { dry_run: false },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_install_agent_missing() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join("strand_test_install_agent_missing");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        fs::create_dir_all(".strand").unwrap();
+        fs::create_dir_all(".agents/agents").unwrap();
+
+        let agent_entry = AgentEntry {
+            name: "test-agent".to_string(),
+            version: "1.0.0".to_string(),
+            installed_path: ".agents/agents/test-agent".to_string(),
+        };
+
+        let result = install_agent(
+            &dummy_client(),
+            &Config::default(),
+            &agent_entry,
+            &InstallOptions { dry_run: true },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true);
+
+        std::env::set_current_dir(original_dir).unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_install_agent_idempotent() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join("strand_test_install_agent_idempotent");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        fs::create_dir_all(".strand").unwrap();
+        fs::create_dir_all(".agents/agents").unwrap();
+        create_test_agent_dir(&temp_dir, "test-agent", "1.0.0");
+
+        let agent_entry = AgentEntry {
+            name: "test-agent".to_string(),
+            version: "1.0.0".to_string(),
+            installed_path: ".agents/agents/test-agent".to_string(),
+        };
+
+        // First call
+        let result1 = install_agent(
+            &dummy_client(),
+            &Config::default(),
+            &agent_entry,
+            &InstallOptions { dry_run: false },
+        );
+
+        assert!(result1.is_ok());
+        assert_eq!(result1.unwrap(), false);
+
+        // Second call should also report up to date
+        let result2 = install_agent(
+            &dummy_client(),
+            &Config::default(),
+            &agent_entry,
+            &InstallOptions { dry_run: false },
+        );
+
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    // Config scenario tests: skills-only, agents-only, mixed
+
+    fn create_test_config_with_agents(base: &Path, skills: Vec<(&str, &str)>, agents: Vec<(&str, &str)>) {
+        let config = Config {
+            version: 1,
+            targets: crate::config::TargetConfig {
+                opencode: true,
+                codex: false,
+            },
+            skills_repo: crate::config::SkillsRepoConfig {
+                provider: "gitlab".to_string(),
+                project: "test/project".to_string(),
+                branch: "main".to_string(),
+                base_url: "https://gitlab.com".to_string(),
+            },
+            agents_repo: crate::config::AgentsRepoConfig {
+                provider: "gitlab".to_string(),
+                project: "test/agents".to_string(),
+                branch: "main".to_string(),
+                base_url: "https://gitlab.com".to_string(),
+            },
+            skills: skills
+                .into_iter()
+                .map(|(name, version)| SkillEntry {
+                    name: name.to_string(),
+                    version: version.to_string(),
+                    installed_path: format!(".agents/skills/{}", name),
+                })
+                .collect(),
+            agents: agents
+                .into_iter()
+                .map(|(name, version)| AgentEntry {
+                    name: name.to_string(),
+                    version: version.to_string(),
+                    installed_path: format!(".agents/agents/{}", name),
+                })
+                .collect(),
+        };
+        fs::write(
+            base.join(".strand/config.json"),
+            serde_json::to_string_pretty(&config).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_install_skills_only_config() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join("strand_test_install_skills_only");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        fs::create_dir_all(".strand").unwrap();
+        fs::create_dir_all(".agents/skills").unwrap();
+        create_test_config_with_agents(&temp_dir, vec![("test-skill", "1.0.0")], vec![]);
+        create_test_skill_dir(&temp_dir, "test-skill", "1.0.0");
+
+        let config_str = fs::read_to_string(".strand/config.json").unwrap();
+        let config: Config = serde_json::from_str(&config_str).unwrap();
+
+        assert_eq!(config.skills.len(), 1);
+        assert!(config.agents.is_empty());
+
+        let skill_entry = &config.skills[0];
+        let result = install_skill(
+            &dummy_client(),
+            &config,
+            skill_entry,
+            &InstallOptions { dry_run: false },
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_install_agents_only_config() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join("strand_test_install_agents_only");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        fs::create_dir_all(".strand").unwrap();
+        fs::create_dir_all(".agents/agents").unwrap();
+        create_test_config_with_agents(&temp_dir, vec![], vec![("test-agent", "1.0.0")]);
+        create_test_agent_dir(&temp_dir, "test-agent", "1.0.0");
+
+        let config_str = fs::read_to_string(".strand/config.json").unwrap();
+        let config: Config = serde_json::from_str(&config_str).unwrap();
+
+        assert!(config.skills.is_empty());
+        assert_eq!(config.agents.len(), 1);
+
+        let agent_entry = &config.agents[0];
+        let result = install_agent(
+            &dummy_client(),
+            &config,
+            agent_entry,
+            &InstallOptions { dry_run: false },
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false);
+
+        std::env::set_current_dir(original_dir).unwrap();
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_install_mixed_config() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join("strand_test_install_mixed");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+
+        fs::create_dir_all(".strand").unwrap();
+        fs::create_dir_all(".agents/skills").unwrap();
+        fs::create_dir_all(".agents/agents").unwrap();
+        create_test_config_with_agents(
+            &temp_dir,
+            vec![("test-skill", "1.0.0")],
+            vec![("test-agent", "1.0.0")],
+        );
+        create_test_skill_dir(&temp_dir, "test-skill", "1.0.0");
+        create_test_agent_dir(&temp_dir, "test-agent", "1.0.0");
+
+        let config_str = fs::read_to_string(".strand/config.json").unwrap();
+        let config: Config = serde_json::from_str(&config_str).unwrap();
+
+        assert_eq!(config.skills.len(), 1);
+        assert_eq!(config.agents.len(), 1);
+
+        // Process skill
+        let skill_entry = &config.skills[0];
+        let skill_result = install_skill(
+            &dummy_client(),
+            &config,
+            skill_entry,
+            &InstallOptions { dry_run: false },
+        );
+        assert!(skill_result.is_ok());
+        assert_eq!(skill_result.unwrap(), false);
+
+        // Process agent
+        let agent_entry = &config.agents[0];
+        let agent_result = install_agent(
+            &dummy_client(),
+            &config,
+            agent_entry,
+            &InstallOptions { dry_run: false },
+        );
+        assert!(agent_result.is_ok());
+        assert_eq!(agent_result.unwrap(), false);
 
         std::env::set_current_dir(original_dir).unwrap();
         let _ = fs::remove_dir_all(&temp_dir);

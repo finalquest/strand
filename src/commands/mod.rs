@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod init;
 pub mod ls;
 pub mod ls_remote;

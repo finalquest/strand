@@ -17,6 +17,8 @@
 | [report](report.md) | Validation report formatting | `src/report.rs` |
 | [version](version.md) | Semver comparison | `src/version.rs` |
 | [codex](codex.md) | Codex integration | `src/codex.rs` |
+| [symlinks](symlinks.md) | Generic symlink utility | `src/symlinks.rs` |
+| [env](env.md) | Environment variables | `src/env.rs` |
 | [gitignore](gitignore.md) | Gitignore management | `src/gitignore.rs` |
 
 ## Dependency Graph
@@ -37,6 +39,10 @@ commands::ls_remote → codex, config, download, gitignore, gitlab::client, mode
 commands::sync      → codex, config, download, gitignore, gitlab::client, models::skill, version
 commands::install   → codex, config, download, gitignore, gitlab::client, models::skill
 commands::validate  → fix, models::skill, report
+commands::agents::ls       → config, gitlab::client, models::agent
+commands::agents::ls_remote → config, gitlab::client, models::agent
+commands::agents::validate → fix, models::agent, report
+commands::agents::helpers  → config, download, gitignore, gitlab::client, models::agent, symlinks
 
 gitlab::client
   → auth, gitlab::errors, gitlab::transport
@@ -51,10 +57,16 @@ download
   → gitlab::client, models::skill
 
 codex
-  → config
+  → config, symlinks
+
+symlinks
+  → (none)
+
+env
+  → (none)
 
 config
-  → models::skill
+  → models::skill, models::agent
 
 resolver::mod
   → resolver::gitlab, resolver::local, resolver::errors

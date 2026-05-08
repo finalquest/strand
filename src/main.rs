@@ -1,5 +1,5 @@
 use clap::Parser;
-use strand::cli::{Cli, Commands};
+use strand::cli::{AgentsCommands, Cli, Commands};
 
 fn main() {
     let cli = Cli::parse();
@@ -39,6 +39,28 @@ fn main() {
             if let Err(e) = strand::commands::validate::execute() {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
+            }
+        }
+        Commands::Agents { command } => {
+            match command {
+                AgentsCommands::Ls => {
+                    if let Err(e) = strand::commands::agents::ls() {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+                AgentsCommands::LsRemote => {
+                    if let Err(e) = strand::commands::agents::ls_remote() {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+                AgentsCommands::Validate => {
+                    if let Err(e) = strand::commands::agents::validate() {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
             }
         }
     }

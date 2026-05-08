@@ -5,7 +5,7 @@ const dataDir = process.env.SPEC_TO_KANBAN_DATA_DIR || ".opencode/data";
 const plan = JSON.parse(readFileSync(join(dataDir, "merged-task-plan.json"), "utf8"));
 const errors = [];
 const tasks = plan.tasks_to_create;
-const allowedLabels = new Set(["cli", "storage", "evaluator", "validation", "observability", "docs", "definition", "foundation", "feature", "bug", "spike", "mvp", "blocked", "needs-decision", "high", "medium", "low"]);
+const allowedLabels = new Set(["cli", "storage", "evaluator", "validation", "observability", "docs", "frontend", "backend", "orchestrator", "workspace", "opencode", "definition", "foundation", "feature", "bug", "spike", "mvp", "blocked", "needs-decision", "high", "medium", "low"]);
 const allowedTargetLists = new Set(["definitions", "backlog", "ready", "blocked"]);
 const requiredBoundaryArrays = ["paths", "entrypoints", "modules"];
 

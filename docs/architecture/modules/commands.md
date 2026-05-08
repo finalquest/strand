@@ -1,7 +1,7 @@
 # `commands`
 
 **Purpose**: Implementation of each CLI subcommand.
-**Files**: `src/commands/mod.rs`, `src/commands/{init,install,ls,ls_remote,sync,validate}.rs`
+**Files**: `src/commands/mod.rs`, `src/commands/{init,install,ls,ls_remote,sync,validate}.rs`, `src/commands/agents/{mod,ls,ls_remote,validate,helpers}.rs`
 
 ## Public API
 
@@ -13,7 +13,10 @@
 | `commands::ls` | `pub fn execute() -> Result<()>` | Lists installed skills with version comparison |
 | `commands::sync` | `pub fn execute() -> Result<()>` | Check for updates, optionally upgrade |
 | `commands::install` | `pub fn execute(InstallOptions) -> Result<()>` | Reinstall skills pinned in config |
-| `commands::validate` | `pub fn execute() -> Result<()>` | Validate local skills |
+| `commands::validate`  | `pub fn execute() -> Result<()>` | Validate local skills |
+| `commands::agents::ls` | `pub fn execute() -> Result<()>` | Lists installed agents with version comparison |
+| `commands::agents::ls_remote` | `pub fn execute() -> Result<()>` | Lists remote agents with fuzzy select |
+| `commands::agents::validate` | `pub fn execute() -> Result<()>` | Validate local agents |
 
 ## Common Pattern
 
@@ -34,6 +37,10 @@ commands::ls        → config, gitlab::client, models::skill
 commands::sync      → codex, config, download, gitignore, gitlab::client, models::skill, version
 commands::install   → codex, config, download, gitignore, gitlab::client, models::skill
 commands::validate  → fix, models::skill, report
+commands::agents::ls       → config, gitlab::client, models::agent
+commands::agents::ls_remote → config, gitlab::client, models::agent
+commands::agents::validate → fix, models::agent, report
+commands::agents::helpers  → config, download, gitignore, gitlab::client, models::agent, symlinks
 ```
 
 ## Skill Format
@@ -50,6 +57,19 @@ metadata:
 ```
 
 The old `skill.json` format is no longer used. During migration, `validate` detects legacy `skill.json` files and offers to convert them.
+
+## Agent Format
+
+Commands that interact with agents use `AGENT.md` with YAML frontmatter:
+
+```yaml
+---
+name: agent-name
+description: "Agent description"
+metadata:
+  version: "1.0.0"
+---
+```
 
 ## Adding a New Command
 

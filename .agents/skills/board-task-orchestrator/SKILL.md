@@ -39,6 +39,34 @@ This is repo-local development tooling. It is not Vanguard product behavior.
 
    Use `--list blocked` if the implementer reports a real blocker.
 
+## Definition Flow
+
+When cards exist in the `definitions` list that need contracts, interfaces, or schemas defined before implementation:
+
+1. Claim the next definition card:
+
+   ```sh
+   node .opencode/scripts/claim-definition-card.cjs
+   ```
+
+   This selects the lowest `Execution order` card in `definitions`, moves it to `Doing`, and emits compact JSON containing `claimed` and `prompt_context`.
+
+2. Launch the `definition-worker` subagent with `prompt_context` as the definition prompt.
+
+3. Inspect the definition result.
+
+4. Move the card based on the result:
+
+   ```sh
+   node .opencode/scripts/move-board-card.cjs --card <T-000-or-card-id> --list ready
+   ```
+
+   Use `--list blocked` if the definition worker reports unresolved blockers (e.g., depends on another definition card).
+
+   The definition worker returns `move_to` in its JSON result:
+   - `ready`: definition is complete, move to Ready
+   - `blocked`: unresolved blockers remain, move to Blocked
+
 ## Blocked Card Resolution Flow
 
 When no Ready card is available but blocked cards exist:
@@ -114,6 +142,7 @@ node .opencode/scripts/claim-next-board-card.cjs --dry-run
 - The orchestrator owns board I/O and list movement.
 - The implementation agent must not move cards.
 - The review agent must not move cards.
+- The definition worker must not move cards.
 - Do not assign a `Blocked` card unless its blockers have been resolved and it has been moved to `Ready` first.
 - Only one agent should own one `Doing` card at a time.
 - If implementation succeeds and verification passes, move the card to `Review`.
@@ -122,6 +151,8 @@ node .opencode/scripts/claim-next-board-card.cjs --dry-run
 - If review is approved, move the card to `Done`.
 - If review requests changes, move the card back to `Doing` and record the required changes.
 - If review finds a blocker, move the card to `Blocked` and record the blocker.
+- If definition is complete with no blockers, move the card to `Ready`.
+- If definition has unresolved blockers, move the card to `Blocked` and record the blockers.
 - Do not print credentials, raw API responses, or full card bodies.
 
 ## Implementation Prompt Shape
@@ -145,6 +176,19 @@ Pass this shape to `task-reviewer`:
 You are reviewing Planka card <CARD_ID_OR_URL>: <TITLE>.
 Use the card description as the review contract.
 Rules: read handoff.md first; review only this card; verify acceptance criteria and verification command; check that out-of-scope items were not implemented; check code style and minimal correctness; do not fix issues yourself; report specific issues with file, line, and required change; if blocked, stop and report the blocker.
+Card URL: <URL>
+
+<CARD DESCRIPTION>
+```
+
+## Definition Worker Prompt Shape
+
+Pass this shape to `definition-worker`:
+
+```text
+You are defining Planka card <CARD_ID_OR_URL>: <TITLE>.
+Use the card description as the definition contract.
+Rules: read handoff.md first; define only this card; do not implement code; do not do out-of-scope items; preserve unrelated changes; run the verification command from the card; if blocked, stop and report the blocker.
 Card URL: <URL>
 
 <CARD DESCRIPTION>
@@ -200,5 +244,19 @@ Return only a compact summary:
 - Moved: Review -> Done|Doing|Blocked
 - Review: approved|needs_changes|blocked
 - Issues: N major, N minor, N suggestions
+- Board: <card url>
+```
+
+### Definition
+
+Return only a compact summary:
+
+```md
+- Defined: T-000 <title>
+- Moved: Doing -> Ready|Blocked
+- Definition: complete|blocked|failed
+- Validation: command, pass/fail/not run
+- Files changed: N
+- Blockers: list
 - Board: <card url>
 ```

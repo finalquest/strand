@@ -19,6 +19,14 @@ pub enum Commands {
     Sync,
     Install { dry_run: bool },
     Validate,
+    Agents(AgentsCommands),
+}
+
+#[derive(Subcommand)]
+pub enum AgentsCommands {
+    Ls,
+    LsRemote,
+    Validate,
 }
 ```
 

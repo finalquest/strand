@@ -1,5 +1,10 @@
 /target
-/dist
-/releases
 /public
-handoff.md
+dist/
+.DS_Store
+.env
+.shard/
+.opencode/
+.agents/agents/test-agent
+.opencode/agents/test-agent
+.codex/agents/test-agent
