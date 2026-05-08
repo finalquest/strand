@@ -217,6 +217,15 @@ fn render_table(skills: &[Skill]) {
 }
 
 pub fn install_skill(client: &GitLabClient, skill: &Skill) -> Result<()> {
+    {
+        let config_str = std::fs::read_to_string(crate::config::CONFIG_PATH).unwrap_or_default();
+        let config: crate::config::Config = serde_json::from_str(&config_str).unwrap_or_default();
+        let managed: std::collections::HashSet<String> =
+            config.skills.into_iter().map(|s| s.name).collect();
+        crate::discovery::check_local_skill_conflict(&skill.name, &managed)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    }
+
     let pb = ProgressBar::new_spinner();
     pb.set_style(
         ProgressStyle::default_spinner()

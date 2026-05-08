@@ -3,6 +3,7 @@ pub mod cli;
 pub mod codex;
 pub mod commands;
 pub mod config;
+pub mod discovery;
 pub mod download;
 pub mod env;
 pub mod fix;

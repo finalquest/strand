@@ -194,6 +194,15 @@ fn install_single_agent_for_skill(
     agent_name: &str,
     targets: &TargetConfig,
 ) -> Result<String> {
+    {
+        let config_str = std::fs::read_to_string(CONFIG_PATH).unwrap_or_default();
+        let config: Config = serde_json::from_str(&config_str).unwrap_or_default();
+        let managed: std::collections::HashSet<String> =
+            config.agents.into_iter().map(|a| a.name).collect();
+        crate::discovery::check_local_agent_conflict(agent_name, &managed)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    }
+
     let remote_agent_md = format!("agents/{}/AGENT.md", agent_name);
     let content = client
         .fetch_file(&remote_agent_md)
