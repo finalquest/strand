@@ -382,6 +382,35 @@ fn upgrade_skill(
         codex::create_symlink(&skill.name)?;
     }
 
+    // Install declared agents
+    if !skill.agents.is_empty() {
+        println!(
+            "  {} requires {} agent(s), installing...",
+            skill.name,
+            skill.agents.len()
+        );
+
+        let (agents_project, agents_base_url, agents_branch) = config.resolve_agents_repo();
+
+        if agents_project.is_empty() {
+            println!("  Warning: skill requires agents but no agents repo configured");
+        } else {
+            match GitLabClient::for_project(agents_base_url, agents_project) {
+                Ok(agents_client) => {
+                    let agents_client = agents_client.with_branch(&agents_branch);
+                    crate::commands::agents::helpers::install_skill_agents(
+                        &skill.agents,
+                        &agents_client,
+                        &config.targets,
+                    );
+                }
+                Err(e) => {
+                    eprintln!("  Warning: failed to create agents client: {}", e);
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

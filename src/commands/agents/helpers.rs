@@ -143,6 +143,73 @@ pub fn create_agent_symlinks(agent_name: &str, targets: &TargetConfig) -> Result
     Ok(())
 }
 
+pub struct AgentInstallResult {
+    pub succeeded: Vec<(String, String)>,
+    pub failed: Vec<(String, String)>,
+}
+
+impl AgentInstallResult {
+    pub fn is_ok(&self) -> bool {
+        self.failed.is_empty()
+    }
+
+    pub fn total(&self) -> usize {
+        self.succeeded.len() + self.failed.len()
+    }
+}
+
+/// Install all agents declared by a skill.
+/// For each agent: fetch AGENT.md, parse, download, update config, gitignore, symlinks.
+/// Errors are non-blocking: failures are collected but don't stop other agents.
+pub fn install_skill_agents(
+    agent_names: &[String],
+    agents_client: &GitLabClient,
+    targets: &TargetConfig,
+) -> AgentInstallResult {
+    let mut succeeded: Vec<(String, String)> = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
+
+    for agent_name in agent_names {
+        println!("    Installing agent {}...", agent_name);
+        match install_single_agent_for_skill(agents_client, agent_name, targets) {
+            Ok(version) => {
+                println!("    Installed agent {} v{}", agent_name, version);
+                succeeded.push((agent_name.clone(), version));
+            }
+            Err(e) => {
+                eprintln!("    Failed to install agent {}: {}", agent_name, e);
+                failed.push((agent_name.clone(), e.to_string()));
+            }
+        }
+    }
+
+    AgentInstallResult {
+        succeeded,
+        failed,
+    }
+}
+
+fn install_single_agent_for_skill(
+    client: &GitLabClient,
+    agent_name: &str,
+    targets: &TargetConfig,
+) -> Result<String> {
+    let remote_agent_md = format!("agents/{}/AGENT.md", agent_name);
+    let content = client
+        .fetch_file(&remote_agent_md)
+        .map_err(|e| anyhow::anyhow!("Failed to fetch AGENT.md for {}: {}", agent_name, e))?;
+    let agent: Agent = crate::models::agent::parse_agent_md(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse AGENT.md for {}: {}", agent_name, e))?
+        .to_agent();
+
+    download_and_install_agent(client, &agent)?;
+    update_config_with_agent(&agent)?;
+    ensure_gitignore_entries_for_agent(&agent.name)?;
+    create_agent_symlinks(&agent.name, targets)?;
+
+    Ok(agent.version)
+}
+
 fn create_symlink_for_target(
     agent_name: &str,
     source_path: &Path,

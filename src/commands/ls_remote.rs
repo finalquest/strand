@@ -3,7 +3,6 @@ use dialoguer::{FuzzySelect, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::IsTerminal;
 
-use crate::codex;
 use crate::config::Config;
 use crate::download;
 use crate::gitignore;
@@ -233,12 +232,46 @@ pub fn install_skill(client: &GitLabClient, skill: &Skill) -> Result<()> {
 
     crate::config::add_skill(skill)?;
     gitignore::ensure_gitignore_entries(&skill.name)?;
-    codex::create_symlink(&skill.name)?;
+    crate::codex::create_symlink(&skill.name)?;
 
     println!(
         "Successfully installed {} v{}",
         skill.name, skill.version
     );
+
+    // Install declared agents
+    if !skill.agents.is_empty() {
+        println!(
+            "  {} requires {} agent(s), installing...",
+            skill.name,
+            skill.agents.len()
+        );
+
+        if let Ok(config_str) = std::fs::read_to_string(crate::config::CONFIG_PATH) {
+            if let Ok(config) = serde_json::from_str::<Config>(&config_str) {
+                let (agents_project, agents_base_url, agents_branch) =
+                    config.resolve_agents_repo();
+
+                if agents_project.is_empty() {
+                    println!("  Warning: skill requires agents but no agents repo configured");
+                } else {
+                    match GitLabClient::for_project(agents_base_url, agents_project) {
+                        Ok(agents_client) => {
+                            let agents_client = agents_client.with_branch(&agents_branch);
+                            crate::commands::agents::helpers::install_skill_agents(
+                                &skill.agents,
+                                &agents_client,
+                                &config.targets,
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("  Warning: failed to create agents client: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

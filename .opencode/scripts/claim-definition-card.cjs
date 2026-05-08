@@ -24,10 +24,14 @@ function sortByExecutionOrder(a, b) {
 }
 
 function buildPromptContext(card) {
+  const hasStructuredSections = /^(Paths|Implementation steps|Acceptance criteria|Verification|Out of scope|Blocked by|Unblocks):/m.test(card.description || "");
+  const rules = hasStructuredSections
+    ? "Rules: read handoff.md first; define only this card; do not implement code; do not do out-of-scope items; preserve unrelated changes; run the verification command from the card; if blocked, stop and report the blocker."
+    : "Rules: read handoff.md first; this is a NARRATIVE card without structured sections — explore the codebase, produce Paths/Implementation steps/Acceptance criteria/Verification/Out of scope/Blocked by/Unblocks, then update the card description via PATCH /api/cards/{id} (use $BOARD_API_KEY and board base URL from .opencode/config/spec-to-kanban.json); do not implement code; if blocked, stop and report the blocker.";
   return [
     `You are defining Planka card ${card.local_id || card.id}: ${card.title}.`,
     "Use the card description as the definition contract.",
-    "Rules: read handoff.md first; define only this card; do not implement code; do not do out-of-scope items; preserve unrelated changes; run the verification command from the card; if blocked, stop and report the blocker.",
+    rules,
     `Card URL: ${card.url}`,
     "",
     card.description,
