@@ -70,6 +70,7 @@ fn test_init_rewrites_config_preserving_skills() {
             name: "test-skill".to_string(),
             version: "1.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         }],
         ..Default::default()
     };
@@ -222,6 +223,7 @@ fn test_init_preserves_agents_and_creates_symlinks() {
             version: "1.0.0".to_string(),
             installed_path: ".agents/agents/test-agent".to_string(),
         }],
+        ..Default::default()
     };
     fs::write(
         ".strand/config.json",

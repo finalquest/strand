@@ -27,6 +27,8 @@ pub enum Commands {
     },
     /// Validate skill structure and metadata
     Validate,
+    /// Create a skill pack from local skills directory
+    CreatePack,
     /// Manage agents
     Agents {
         #[command(subcommand)]

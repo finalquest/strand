@@ -41,6 +41,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::CreatePack => {
+            if let Err(e) = strand::commands::create_pack::execute() {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
         Commands::Agents { command } => {
             match command {
                 AgentsCommands::Ls => {

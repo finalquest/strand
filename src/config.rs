@@ -16,6 +16,8 @@ pub struct Config {
     pub agents_repo: AgentsRepoConfig,
     #[serde(default)]
     pub agents: Vec<AgentEntry>,
+    #[serde(default)]
+    pub packs: Vec<PackEntry>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -49,6 +51,8 @@ pub struct SkillEntry {
     pub version: String,
     #[serde(rename = "installedPath")]
     pub installed_path: String,
+    #[serde(rename = "remotePath", default, skip_serializing_if = "String::is_empty")]
+    pub remote_path: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -73,6 +77,13 @@ pub struct AgentEntry {
     pub version: String,
     #[serde(rename = "installedPath")]
     pub installed_path: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct PackEntry {
+    pub name: String,
+    #[serde(default)]
+    pub skills: Vec<String>,
 }
 
 impl Config {
@@ -117,6 +128,13 @@ impl Config {
 }
 
 pub fn add_skill(skill: &crate::models::skill::Skill) -> Result<()> {
+    add_skill_with_remote_path(skill, "")
+}
+
+pub fn add_skill_with_remote_path(
+    skill: &crate::models::skill::Skill,
+    remote_path: &str,
+) -> Result<()> {
     let config_path = Path::new(CONFIG_PATH);
     if !config_path.exists() {
         return Ok(());
@@ -133,6 +151,7 @@ pub fn add_skill(skill: &crate::models::skill::Skill) -> Result<()> {
         name: skill.name.clone(),
         version: skill.version.clone(),
         installed_path: format!(".agents/skills/{}", skill.name),
+        remote_path: remote_path.to_string(),
     });
 
     let config_json = serde_json::to_string_pretty(&config)
@@ -160,6 +179,32 @@ pub fn add_agent(agent: &crate::models::agent::Agent) -> Result<()> {
         name: agent.name.clone(),
         version: agent.version.clone(),
         installed_path: format!(".agents/agents/{}", agent.name),
+    });
+
+    let config_json = serde_json::to_string_pretty(&config)
+        .with_context(|| format!("Failed to serialize {}", CONFIG_PATH))?;
+    fs::write(config_path, config_json)
+        .with_context(|| format!("Failed to write {}", CONFIG_PATH))?;
+
+    Ok(())
+}
+
+pub fn add_pack(pack: &crate::models::pack::Pack) -> Result<()> {
+    let config_path = Path::new(CONFIG_PATH);
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let config_str = fs::read_to_string(config_path)
+        .with_context(|| format!("Failed to read {}", CONFIG_PATH))?;
+    let mut config: Config = serde_json::from_str(&config_str)
+        .with_context(|| format!("Failed to parse {}", CONFIG_PATH))?;
+
+    config.packs.retain(|p| p.name != pack.name);
+
+    config.packs.push(PackEntry {
+        name: pack.name.clone(),
+        skills: pack.skills.clone(),
     });
 
     let config_json = serde_json::to_string_pretty(&config)

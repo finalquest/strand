@@ -143,7 +143,11 @@ fn install_skill(
         skill_entry.name, skill_entry.version
     );
 
-    let remote_skill_md = format!("skills/{}/SKILL.md", skill_entry.name);
+    let remote_skill_md = if skill_entry.remote_path.is_empty() {
+        format!("skills/{}/SKILL.md", skill_entry.name)
+    } else {
+        format!("skills/{}/SKILL.md", skill_entry.remote_path)
+    };
     let content = client
         .fetch_file(&remote_skill_md)
         .map_err(|e| anyhow::anyhow!("Failed to fetch SKILL.md: {}", e))?;
@@ -160,7 +164,12 @@ fn install_skill(
         ));
     }
 
-    download::download_and_install(client, &skill)?;
+    if skill_entry.remote_path.is_empty() {
+        download::download_and_install(client, &skill)?;
+    } else {
+        let remote_dir = format!("skills/{}", skill_entry.remote_path);
+        download::download_and_install_from_path(client, &skill, &remote_dir)?;
+    }
     gitignore::ensure_gitignore_entries(&skill.name)?;
 
     if config.targets.codex {
@@ -372,6 +381,7 @@ mod tests {
                     name: name.to_string(),
                     version: version.to_string(),
                     installed_path: format!(".agents/skills/{}", name),
+                    remote_path: String::new(),
                 })
                 .collect(),
             ..Default::default()
@@ -402,6 +412,7 @@ mod tests {
             name: "test-skill".to_string(),
             version: "1.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         };
 
         let result = install_skill(
@@ -436,6 +447,7 @@ mod tests {
             name: "test-skill".to_string(),
             version: "1.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         };
 
         let result = install_skill(
@@ -471,6 +483,7 @@ mod tests {
             name: "test-skill".to_string(),
             version: "2.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         };
 
         let result = install_skill(
@@ -506,6 +519,7 @@ mod tests {
             name: "test-skill".to_string(),
             version: "1.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         };
 
         // First call
@@ -674,6 +688,7 @@ mod tests {
                     name: name.to_string(),
                     version: version.to_string(),
                     installed_path: format!(".agents/skills/{}", name),
+                    remote_path: String::new(),
                 })
                 .collect(),
             agents: agents
@@ -684,6 +699,7 @@ mod tests {
                     installed_path: format!(".agents/agents/{}", name),
                 })
                 .collect(),
+            packs: vec![],
         };
         fs::write(
             base.join(".strand/config.json"),

@@ -34,21 +34,10 @@ pub fn execute() -> Result<()> {
     let mut valid_count = 0;
     let mut invalid_count = 0;
 
-    for entry in std::fs::read_dir(skills_dir)? {
-        let entry = entry?;
-        let path = entry.path();
+    let discovered = discover_skill_dirs(skills_dir)?;
 
-        if !path.is_dir() {
-            continue;
-        }
-
-        let skill_name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        let result = validate_skill(&path, &skill_name);
+    for (path, skill_name) in &discovered {
+        let result = validate_skill(path, skill_name);
 
         if result.valid {
             valid_count += 1;
@@ -158,6 +147,9 @@ pub fn execute() -> Result<()> {
             println!("Run interactively to apply auto-fixes.");
         }
     }
+
+    // Validate packs
+    validate_packs(skills_dir, &discovered)?;
 
     if invalid_count > 0 {
         let total = valid_count + invalid_count;
@@ -306,7 +298,6 @@ fn validate_assets(assets_dir: &Path, skill_name: &str) -> Result<(), Validation
 
         let path = entry.path();
         if path.is_file() {
-            // Verify file is readable
             let _ = std::fs::metadata(&path).map_err(|e| ValidationError {
                 skill_name: skill_name.to_string(),
                 issue: format!(
@@ -317,6 +308,125 @@ fn validate_assets(assets_dir: &Path, skill_name: &str) -> Result<(), Validation
                 critical: true,
             })?;
         }
+    }
+
+    Ok(())
+}
+
+fn discover_skill_dirs(skills_dir: &Path) -> Result<Vec<(std::path::PathBuf, String)>> {
+    let mut skills = Vec::new();
+
+    for entry in std::fs::read_dir(skills_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+
+        if path.join("SKILL.md").exists() {
+            skills.push((path, dir_name));
+        } else {
+            for sub_entry in std::fs::read_dir(&path)? {
+                let sub_entry = sub_entry?;
+                let sub_path = sub_entry.path();
+
+                if !sub_path.is_dir() {
+                    continue;
+                }
+
+                if sub_path.join("SKILL.md").exists() {
+                    let sub_name = sub_entry.file_name().to_string_lossy().to_string();
+                    skills.push((sub_path, format!("{}/{}", dir_name, sub_name)));
+                }
+            }
+        }
+    }
+
+    skills.sort_by(|a, b| a.1.cmp(&b.1));
+    Ok(skills)
+}
+
+fn validate_packs(
+    skills_dir: &Path,
+    discovered_skills: &[(std::path::PathBuf, String)],
+) -> Result<()> {
+    let packs_dir = Path::new("packs");
+    if !packs_dir.exists() {
+        return Ok(());
+    }
+
+    let known_skills: std::collections::HashSet<&str> =
+        discovered_skills.iter().map(|(_, name)| name.as_str()).collect();
+
+    let mut pack_count = 0;
+    let mut pack_errors = 0;
+
+    for entry in std::fs::read_dir(packs_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        let pack_md = path.join("pack.md");
+        if !pack_md.exists() {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(&pack_md) {
+            Ok(c) => c,
+            Err(e) => {
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                eprintln!("  ✗ {}: failed to read pack.md: {}", dir_name, e);
+                pack_errors += 1;
+                continue;
+            }
+        };
+
+        let pack = match crate::models::pack::parse_pack_md(&content) {
+            Ok(f) => f.to_pack(),
+            Err(e) => {
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                eprintln!("  ✗ {}: failed to parse pack.md: {}", dir_name, e);
+                pack_errors += 1;
+                continue;
+            }
+        };
+
+        pack_count += 1;
+        let mut pack_valid = true;
+
+        for skill_ref in &pack.skills {
+            if !known_skills.contains(skill_ref.as_str()) {
+                eprintln!(
+                    "  ✗ pack '{}': references unknown skill '{}'",
+                    pack.name, skill_ref
+                );
+                pack_valid = false;
+            }
+        }
+
+        if pack_valid {
+            println!("  ✓ pack '{}': {} skills validated", pack.name, pack.skills.len());
+        } else {
+            pack_errors += 1;
+        }
+    }
+
+    if pack_count > 0 {
+        println!("\nPacks validated: {} ({} errors)", pack_count, pack_errors);
+    }
+
+    if pack_errors > 0 {
+        eprintln!(
+            "\nValidation failed: {} pack(s) have errors",
+            pack_errors
+        );
+        std::process::exit(1);
     }
 
     Ok(())

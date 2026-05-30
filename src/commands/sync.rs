@@ -125,6 +125,30 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // Pack integrity check
+    if !config.packs.is_empty() {
+        let managed_skills: std::collections::HashSet<&str> =
+            config.skills.iter().map(|s| s.name.as_str()).collect();
+
+        for pack in &config.packs {
+            let mut missing = Vec::new();
+            for skill_ref in &pack.skills {
+                let skill_name = skill_ref.split('/').last().unwrap_or(skill_ref);
+                if !managed_skills.contains(skill_name) {
+                    missing.push(skill_ref.as_str());
+                }
+            }
+
+            if !missing.is_empty() {
+                eprintln!(
+                    "\nWarning: pack '{}' has missing skills: {}",
+                    pack.name,
+                    missing.join(", ")
+                );
+            }
+        }
+    }
+
     let outdated_skills: Vec<&SyncStatus> = statuses.iter().filter(|s| s.needs_update).collect();
     let outdated_agents: Vec<&SyncStatus> = agent_statuses.iter().filter(|s| s.needs_update).collect();
 
@@ -220,7 +244,11 @@ pub fn execute() -> Result<()> {
 }
 
 fn check_skill_status(client: &GitLabClient, skill_entry: &SkillEntry) -> Result<SyncStatus> {
-    let remote_skill_md = format!("skills/{}/SKILL.md", skill_entry.name);
+    let remote_skill_md = if skill_entry.remote_path.is_empty() {
+        format!("skills/{}/SKILL.md", skill_entry.name)
+    } else {
+        format!("skills/{}/SKILL.md", skill_entry.remote_path)
+    };
     let content = client
         .fetch_file(&remote_skill_md)
         .map_err(|e| anyhow::anyhow!("Failed to fetch SKILL.md: {}", e))?;
@@ -355,7 +383,17 @@ fn upgrade_skill(
     config: &mut Config,
     status: &SyncStatus,
 ) -> Result<()> {
-    let remote_skill_md = format!("skills/{}/SKILL.md", status.name);
+    let skill_remote_path = config
+        .skills
+        .iter()
+        .find(|e| e.name == status.name)
+        .map(|e| e.remote_path.as_str())
+        .unwrap_or("");
+    let remote_skill_md = if skill_remote_path.is_empty() {
+        format!("skills/{}/SKILL.md", status.name)
+    } else {
+        format!("skills/{}/SKILL.md", skill_remote_path)
+    };
     let content = client
         .fetch_file(&remote_skill_md)
         .map_err(|e| anyhow::anyhow!("Failed to fetch SKILL.md: {}", e))?;
@@ -699,6 +737,7 @@ mod tests {
             name: "test-skill".to_string(),
             version: "1.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         };
 
         let status = check_skill_status(&client, &skill_entry).unwrap();
@@ -716,6 +755,7 @@ mod tests {
             name: "test-skill".to_string(),
             version: "1.0.0".to_string(),
             installed_path: ".agents/skills/test-skill".to_string(),
+            remote_path: String::new(),
         };
 
         let status = check_skill_status(&client, &skill_entry).unwrap();
@@ -778,6 +818,7 @@ mod tests {
                 name: "test-skill".to_string(),
                 version: "1.0.0".to_string(),
                 installed_path: ".agents/skills/test-skill".to_string(),
+                remote_path: String::new(),
             }],
             ..Default::default()
         };
@@ -810,6 +851,7 @@ mod tests {
                 version: "1.0.0".to_string(),
                 installed_path: ".agents/agents/test-agent".to_string(),
             }],
+            packs: vec![],
         };
 
         assert!(config.skills.is_empty());
@@ -844,12 +886,14 @@ mod tests {
                 name: "test-skill".to_string(),
                 version: "1.0.0".to_string(),
                 installed_path: ".agents/skills/test-skill".to_string(),
+                remote_path: String::new(),
             }],
             agents: vec![AgentEntry {
                 name: "test-agent".to_string(),
                 version: "1.0.0".to_string(),
                 installed_path: ".agents/agents/test-agent".to_string(),
             }],
+            packs: vec![],
         };
 
         assert!(!config.skills.is_empty());

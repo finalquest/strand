@@ -15,6 +15,20 @@ pub fn download_and_install(client: &GitLabClient, skill: &Skill) -> Result<()> 
     Ok(())
 }
 
+pub fn download_and_install_from_path(
+    client: &GitLabClient,
+    skill: &Skill,
+    remote_skill_path: &str,
+) -> Result<()> {
+    let install_dir = Path::new(".agents/skills").join(&skill.name);
+    fs::create_dir_all(&install_dir)
+        .with_context(|| format!("Failed to create directory {}", install_dir.display()))?;
+
+    download_directory(client, remote_skill_path, &install_dir)?;
+
+    Ok(())
+}
+
 fn download_directory(client: &GitLabClient, remote_path: &str, local_path: &Path) -> Result<()> {
     let entries = client
         .list_tree(remote_path)
